@@ -7,3 +7,7 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
+# faster-whisper is a plain pip package (CTranslate2 wheels, no conda-only
+# dependency of its own) — installed here alongside the conda-only MFA
+# stack purely because this app runs as one process in the mfa env.
+faster-whisper>=1.0

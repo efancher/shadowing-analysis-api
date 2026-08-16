@@ -23,6 +23,12 @@ MAX_TRANSCRIPT_LENGTH = int(os.environ.get("ANALYSIS_MAX_TRANSCRIPT_LENGTH", "20
 # mistake, not a legitimate use case.
 MAX_AUDIO_BYTES = int(os.environ.get("ANALYSIS_MAX_AUDIO_BYTES", str(20 * 1024 * 1024)))
 
+# faster-whisper model size — "base" (int8), not "small": measured ~270 MB
+# RSS vs. an estimated ~2 GB for "small", and this host had only ~1.5 GB
+# genuinely free when this was added (the alignment service alone already
+# uses ~2.4 GB warm). See app/asr.py.
+WHISPER_MODEL = os.environ.get("ANALYSIS_WHISPER_MODEL", "base")
+
 # The jp_sentence_splits frontend (deployed origin + local dev). Safe to
 # allow-list explicitly rather than wildcard — this is still only reachable
 # at all over the Tailscale tailnet, CORS is just an extra layer on top.

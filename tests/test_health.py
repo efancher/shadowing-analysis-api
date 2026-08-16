@@ -25,3 +25,13 @@ def test_health_reports_models_missing(monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["mfa"] == {"modelsPresent": False, "loaded": False}
+
+
+def test_health_reports_asr_state(monkeypatch):
+    monkeypatch.setattr(main.asr, "is_loaded", lambda: True)
+
+    with TestClient(main.app) as client:
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.json()["asr"] == {"model": main.config.WHISPER_MODEL, "loaded": True}

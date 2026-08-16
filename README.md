@@ -1,14 +1,22 @@
 # shadowing-analysis-api
 
-A small Japanese forced-alignment API: given a short audio clip and its
-known transcript, returns word- and phone-level time boundaries (via
-[Montreal Forced Aligner](https://montreal-forced-aligner.readthedocs.io/)'s
-`japanese_mfa` acoustic model + dictionary). Built for
+A small Japanese pronunciation-analysis API for
 [jp_sentence_splits](../jp_sentence_splits)' shadowing pronunciation-feedback
-feature (see that repo's `docs/STATUS.md`, Phase 9) — the exact Japanese
-sentence and both a native reference recording and a learner recording are
-known ahead of time, so alignment (not open-vocabulary ASR) is the right
-tool.
+feature (see that repo's `docs/STATUS.md`, Phase 9). Two endpoints:
+
+- **`/align`** — given a short audio clip and its known transcript, returns
+  word- and phone-level time boundaries (via
+  [Montreal Forced Aligner](https://montreal-forced-aligner.readthedocs.io/)'s
+  `japanese_mfa` acoustic model + dictionary). The primary signal — the
+  exact Japanese sentence and both a native reference recording and a
+  learner recording are known ahead of time, so alignment (not
+  open-vocabulary ASR) is the right tool for this.
+- **`/transcribe`** — Japanese ASR (via
+  [faster-whisper](https://github.com/SYSTRAN/faster-whisper)) on the
+  learner's recording only, as a **secondary, non-authoritative** signal
+  (Milestone 7) — never ground truth, since the expected transcript is
+  already known. Used to flag "possible pronunciation difference" hints,
+  never to assert "you pronounced X incorrectly."
 
 Like `voicevox-tts-api`, this service is intended to stay **tailnet-only**
 (Tailscale `serve`, never `funnel`/public). It has no authentication of its
@@ -40,6 +48,18 @@ lexicon FST compilation), then **~1-3s per alignment** after that. This app
 loaded state in memory for the life of the process — the systemd service
 below is expected to stay running, not restart per request.
 
+## Why ASR uses the `base` model, not `small`
+
+faster-whisper's Kaldi/pynini-free CTranslate2 wheels install with plain
+pip (no conda needed, unlike MFA) — but model *size* still matters on this
+host: the alignment service alone uses ~2.4 GB RSS once warm, and this box
+had only ~1.5 GB genuinely free when ASR was added (several other personal
+services/sessions share it). Measured before choosing: `base` at int8
+quantization uses **~270 MB RSS** and transcribed a test clip exactly
+right in ~2s — `small` was estimated at ~2 GB, too risky to add on top.
+`ANALYSIS_WHISPER_MODEL` is configurable if more headroom becomes
+available later.
+
 ## Install
 
 ```bash
@@ -53,13 +73,16 @@ bash /tmp/miniforge.sh -b -p ~/miniforge3
 ~/miniforge3/envs/mfa/bin/mfa model download acoustic japanese_mfa
 ~/miniforge3/envs/mfa/bin/mfa model download dictionary japanese_mfa
 
-# 3. This app's own dependencies, into the same environment:
+# 3. This app's own dependencies, into the same environment (includes
+#    faster-whisper — pure pip, no conda dependency of its own):
 ~/miniforge3/envs/mfa/bin/pip install -r requirements-dev.txt
 ```
 
 Also requires `ffmpeg`/`ffprobe` on `PATH` (used to transcode uploaded audio
-to 16 kHz mono WAV before alignment) — a system package, not installed by
-the steps above.
+to 16 kHz mono WAV before alignment/transcription) — a system package, not
+installed by the steps above. The Whisper model itself downloads
+automatically from Hugging Face on first use (cached under `~/.cache`
+afterward).
 
 ## Run
 
@@ -112,19 +135,26 @@ All optional, via environment variables:
 | `ANALYSIS_API_HOST`            | `127.0.0.1`                                                   | Documented default host            |
 | `ANALYSIS_API_PORT`            | `8002`                                                        | Documented default port            |
 | `ANALYSIS_MAX_TRANSCRIPT_LENGTH` | `200`                                                       | Max characters accepted by `/align`|
-| `ANALYSIS_MAX_AUDIO_BYTES`     | `20971520` (20 MB)                                            | Max upload size for `/align`       |
+| `ANALYSIS_MAX_AUDIO_BYTES`     | `20971520` (20 MB)                                            | Max upload size for `/align`/`/transcribe` |
 | `ANALYSIS_ALLOWED_ORIGINS`     | `https://efancher.github.io,http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS allow-list |
+| `ANALYSIS_WHISPER_MODEL`       | `base`                                                        | faster-whisper model size (see above) |
 
 ## API
 
 ### `GET /health`
 
 ```json
-{ "status": "ok", "mfa": { "modelsPresent": true, "loaded": false } }
+{
+  "status": "ok",
+  "mfa": { "modelsPresent": true, "loaded": false },
+  "asr": { "model": "base", "loaded": false }
+}
 ```
 
-`loaded` is `false` until the first `/align` request triggers the one-time
-model/lexicon load; `modelsPresent` just checks the files exist on disk.
+Both `loaded` flags are `false` until the first `/align`/`/transcribe`
+request triggers that endpoint's one-time model load; `mfa.modelsPresent`
+just checks the MFA files exist on disk (ASR's model downloads on demand,
+so there's no equivalent pre-check for it).
 
 ### `POST /align`
 
@@ -169,18 +199,40 @@ Errors: `422` for a blank/too-long transcript, missing/empty/oversized
 audio, or audio `ffmpeg` can't decode; `503` if the MFA models aren't
 downloaded; `500` for an unexpected alignment failure.
 
+### `POST /transcribe`
+
+Multipart form: `audio` (same formats as `/align`) and an optional
+`prompt` (the known sentence text, passed to Whisper as `initial_prompt`
+to bias decoding toward the expected vocabulary — worth passing when you
+have it, but not required).
+
+```bash
+curl -X POST http://127.0.0.1:8002/transcribe \
+  -F "audio=@clip.wav" \
+  -F "prompt=今日はちょっと寒いですね"
+```
+
+```json
+{ "text": "今日はちょっと寒いですね" }
+```
+
+Errors: `422` for missing/empty/oversized audio, too-long `prompt`, or
+audio `ffmpeg` can't decode; `503` if the Whisper model can't load; `500`
+for an unexpected transcription failure. No persistent cache, same
+reasoning as `/align`.
+
 ## Tests
 
 ```bash
 ~/miniforge3/envs/mfa/bin/python3 -m pytest -m "not slow"   # fast, no real models/audio needed
-~/miniforge3/envs/mfa/bin/python3 -m pytest -m slow         # real end-to-end, ~45s
+~/miniforge3/envs/mfa/bin/python3 -m pytest -m slow         # real end-to-end (alignment + ASR), ~45s
 ~/miniforge3/envs/mfa/bin/python3 -m pytest                 # everything
 ```
 
-The `slow` test synthesizes its own test clip via the `voicevox-tts-api`
+The `slow` tests synthesize their own test clip via the `voicevox-tts-api`
 wrapper already running on this host (`127.0.0.1:8001`) rather than using a
-checked-in audio fixture, and is skipped automatically if that's
-unreachable or the MFA models aren't downloaded.
+checked-in audio fixture, and are skipped automatically if that's
+unreachable (the alignment one also needs the MFA models downloaded).
 
 ## Notes
 

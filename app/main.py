@@ -4,7 +4,7 @@ import logging
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import aligner, audio, config
+from app import aligner, asr, audio, config
 
 logger = logging.getLogger("shadowing_analysis_api")
 
@@ -21,6 +21,15 @@ app.add_middleware(
 )
 
 
+async def _read_and_validate_audio(audio_file: UploadFile) -> bytes:
+    data = await audio_file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="audio must not be empty")
+    if len(data) > config.MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=422, detail="audio too large")
+    return data
+
+
 @app.get("/health")
 async def health():
     return {
@@ -28,6 +37,10 @@ async def health():
         "mfa": {
             "modelsPresent": aligner.models_present(),
             "loaded": aligner.is_loaded(),
+        },
+        "asr": {
+            "model": config.WHISPER_MODEL,
+            "loaded": asr.is_loaded(),
         },
     }
 
@@ -43,11 +56,7 @@ async def align_audio(
     if len(text) > config.MAX_TRANSCRIPT_LENGTH:
         raise HTTPException(status_code=422, detail="transcript too long")
 
-    data = await audio_file.read()
-    if not data:
-        raise HTTPException(status_code=422, detail="audio must not be empty")
-    if len(data) > config.MAX_AUDIO_BYTES:
-        raise HTTPException(status_code=422, detail="audio too large")
+    data = await _read_and_validate_audio(audio_file)
 
     try:
         with audio.transcoded_wav(data) as wav_path:
@@ -64,3 +73,32 @@ async def align_audio(
         raise HTTPException(
             status_code=422, detail=f"Could not decode audio: {exc}"
         ) from exc
+
+
+@app.post("/transcribe")
+async def transcribe_audio(
+    audio_file: UploadFile = File(..., alias="audio"),
+    prompt: str | None = Form(default=None),
+):
+    if prompt is not None and len(prompt) > config.MAX_TRANSCRIPT_LENGTH:
+        raise HTTPException(status_code=422, detail="prompt too long")
+
+    data = await _read_and_validate_audio(audio_file)
+
+    try:
+        with audio.transcoded_wav(data) as wav_path:
+            try:
+                text = await asyncio.to_thread(asr.transcribe, wav_path, prompt)
+            except asr.AsrUnavailableError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.warning("Transcription failed: %s", exc)
+                raise HTTPException(status_code=500, detail="Transcription failed") from exc
+    except audio.AudioTranscodeError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Could not decode audio: {exc}"
+        ) from exc
+
+    return {"text": text}
