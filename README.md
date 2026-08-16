@@ -113,6 +113,7 @@ All optional, via environment variables:
 | `ANALYSIS_API_PORT`            | `8002`                                                        | Documented default port            |
 | `ANALYSIS_MAX_TRANSCRIPT_LENGTH` | `200`                                                       | Max characters accepted by `/align`|
 | `ANALYSIS_MAX_AUDIO_BYTES`     | `20971520` (20 MB)                                            | Max upload size for `/align`       |
+| `ANALYSIS_ALLOWED_ORIGINS`     | `https://efancher.github.io,http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS allow-list |
 
 ## API
 
@@ -187,5 +188,7 @@ unreachable or the MFA models aren't downloaded.
   is bound to `127.0.0.1` and only reachable beyond that via the
   Tailscale-tailnet-only `serve` mount above. Do not put this behind a
   public port without adding auth first.
-- No CORS configuration yet — nothing calls this from a browser until the
-  consuming app (`jp_sentence_splits`) wires up its frontend integration.
+- CORS is allow-listed to the `jp_sentence_splits` frontend origin(s) only
+  (`app/config.py`'s `ANALYSIS_ALLOWED_ORIGINS`, default `https://efancher
+  .github.io` plus local dev origins) — not a wildcard, even though the
+  service is also restricted at the network layer.

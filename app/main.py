@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import aligner, audio, config
 
@@ -9,10 +10,15 @@ logger = logging.getLogger("shadowing_analysis_api")
 
 app = FastAPI(title="Shadowing Analysis API")
 
-# NOTE: no CORS configuration yet. Nothing calls this service from a browser
-# until jp_sentence_splits' Milestone 2b (frontend wiring) — configuring
-# CORS against a guessed origin now would be premature. Add an allow-list
-# for the real deployed frontend origin(s) when that lands.
+# The jp_sentence_splits frontend only — this service is also restricted at
+# the network layer (Tailscale-tailnet-only), CORS is an extra layer, not
+# the only one.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
