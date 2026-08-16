@@ -1,0 +1,9 @@
+# kalpy / montreal-forced-aligner (and their Kaldi/pynini bindings) are NOT
+# listed here — they're conda-only (see README's Install section) and this
+# app is meant to run using the `mfa` conda environment's own Python
+# interpreter, not a plain venv. These are the additional packages that
+# environment needs on top of what `mamba create -n mfa -c conda-forge
+# montreal-forced-aligner` already provides.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9

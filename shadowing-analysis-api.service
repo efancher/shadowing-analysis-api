@@ -1,0 +1,13 @@
+[Unit]
+Description=Shadowing pronunciation analysis API (forced alignment)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/shadowing-analysis-api
+ExecStart=%h/miniforge3/envs/mfa/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
