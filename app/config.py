@@ -14,6 +14,19 @@ DICTIONARY_PATH = Path(
         str(MFA_ROOT / "pretrained_models/dictionary/japanese_mfa.dict"),
     )
 )
+# Small, hand-maintained additions layered on top of the pretrained
+# japanese_mfa dictionary for words it has no entry for — chiefly casual
+# contractions (e.g. 足んねえ, the colloquial negative of 足りない) that are
+# common in real spoken/subtitled Japanese but aren't dictionary headwords.
+# Loaded second, after DICTIONARY_PATH (see app/aligner.py), so an entry
+# here can't shadow a real pretrained one. Optional: missing file is a
+# no-op, not an error.
+SUPPLEMENTARY_DICTIONARY_PATH = Path(
+    os.environ.get(
+        "MFA_SUPPLEMENTARY_DICTIONARY_PATH",
+        str(Path(__file__).resolve().parent / "data" / "supplementary_dictionary.dict"),
+    )
+)
 
 API_HOST = os.environ.get("ANALYSIS_API_HOST", "127.0.0.1")
 API_PORT = int(os.environ.get("ANALYSIS_API_PORT", "8002"))

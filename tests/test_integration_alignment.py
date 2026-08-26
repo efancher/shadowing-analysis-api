@@ -41,3 +41,23 @@ def test_real_alignment_matches_expected_words():
     chotto = next(w for w in result["words"] if w["text"] == "ちょっと")
     # っ (sokuon) is a held consonant — MFA marks it with a length diacritic.
     assert any("ː" in phone["text"] for phone in chotto["phones"])
+
+
+@pytest.mark.skipif(not aligner.models_present(), reason="MFA models not downloaded")
+def test_real_alignment_resolves_supplementary_dictionary_word():
+    """足んねえ (casual contraction of 足りない) has no entry in the
+    pretrained japanese_mfa dictionary, so it aligned as a literal `<unk>`
+    token before app/data/supplementary_dictionary.dict added one — reported
+    via jp_sentence_splits' shadowing feedback showing raw `<unk>` tokens for
+    a sentence full of casual speech."""
+    text = "まだ全然足んねえな怒らせてくれよ"
+    audio_bytes = _synthesize(text)
+    if audio_bytes is None:
+        pytest.skip("VOICEVOX TTS wrapper not reachable at 127.0.0.1:8001")
+
+    with transcoded_wav(audio_bytes) as wav_path:
+        result = aligner.align(wav_path, text)
+
+    words = [w["text"] for w in result["words"] if w["text"] not in ("", "<eps>", "sil")]
+    assert "<unk>" not in words
+    assert "足んねえ" in words

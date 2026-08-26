@@ -32,6 +32,24 @@ Python dependencies (FastAPI, uvicorn, etc., see `requirements.txt`) are
 installed *into that same conda environment* rather than a separate venv, so
 one Python interpreter has both.
 
+## Supplementary dictionary
+
+`app/data/supplementary_dictionary.dict` holds hand-added pronunciations
+(same MFA `.dict` format: `word<TAB>phone1 phone2 ...`, IPA-ish `japanese_mfa`
+phone set) layered on top of the pretrained `japanese_mfa` dictionary via a
+second `load_pronunciations()` call in `app/aligner.py`, for words the
+pretrained dictionary has no entry for — chiefly casual contractions (e.g.
+足んねえ, the colloquial negative of 足りない) that show up constantly in
+real spoken/subtitled Japanese but aren't dictionary headwords. Such words
+otherwise align as a literal `<unk>` token with a meaningless duration,
+which surfaced as raw "「<unk>」" text in jp_sentence_splits' shadowing
+feedback. Override the path with `MFA_SUPPLEMENTARY_DICTIONARY_PATH`; a
+missing file is a no-op. To add a word: look up (or reconstruct by analogy
+with similar existing entries, e.g. other `〜んねえ` contractions) its
+`japanese_mfa`-phone-set pronunciation and append a line — no MFA retraining
+needed, just a lexicon FST recompile (i.e. restart the service, since the
+compiled lexicon is loaded once at process start).
+
 ## Why alignment is done in-process, not by shelling out to `mfa align`
 
 Measured on this host: `mfa align` (full corpus pipeline) costs ~155-165s

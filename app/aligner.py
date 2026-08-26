@@ -69,6 +69,8 @@ class _AlignerState:
             ignore_case=True,
         )
         self.lexicon_compiler.load_pronunciations(dictionary.path)
+        if config.SUPPLEMENTARY_DICTIONARY_PATH.is_file():
+            self.lexicon_compiler.load_pronunciations(config.SUPPLEMENTARY_DICTIONARY_PATH)
         self.lexicon_compiler.create_fsts()
         self.tokenizer = generate_language_tokenizer(self.acoustic_model.language)
 
