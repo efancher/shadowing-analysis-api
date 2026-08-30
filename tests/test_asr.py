@@ -139,3 +139,27 @@ def test_transcribe_source_500_on_unexpected_failure(client, monkeypatch):
     _mock_source_pipeline(monkeypatch, error=RuntimeError("boom"))
     resp = client.post("/transcribe-source", files=_files())
     assert resp.status_code == 500
+
+
+def test_transcribe_source_retries_without_vad_when_vad_drops_everything(monkeypatch):
+    """Silero VAD can classify a whole music-heavy track as non-speech;
+    transcribe_source retries with vad_filter off rather than return []."""
+    calls = []
+
+    class _Seg:
+        def __init__(self, text):
+            self.text, self.start, self.end = text, 0.0, 1.0
+            self.avg_logprob, self.no_speech_prob = -0.3, 0.1
+
+    def fake_run(_model, _wav, *, vad):
+        calls.append(vad)
+        return [] if vad else [_Seg("歌詞だよ。")]
+
+    monkeypatch.setattr(asr, "_run_source_transcribe", fake_run)
+    monkeypatch.setattr(asr, "_get_source_model", lambda: object())
+    monkeypatch.setattr(config, "SOURCE_WHISPER_UNLOAD", False)
+
+    out = asr.transcribe_source(Path("/tmp/fake.wav"))
+
+    assert calls == [True, False]
+    assert [s["text"] for s in out] == ["歌詞だよ。"]

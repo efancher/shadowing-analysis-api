@@ -45,9 +45,17 @@ WHISPER_MODEL = os.environ.get("ANALYSIS_WHISPER_MODEL", "base")
 # A larger model for full-source transcription (jp_sentence_splits mining
 # pipeline v2, POST /transcribe-source) — there the transcript IS the
 # product, so kanji/punctuation accuracy matters, unlike the diagnostic ASR
-# above. Lazily loaded on first mining run and kept resident. Set to "base"
-# on a tighter box; "medium" if there's RAM headroom.
-SOURCE_WHISPER_MODEL = os.environ.get("ANALYSIS_SOURCE_WHISPER_MODEL", "small")
+# above. Default "large-v3-turbo": measured on this host at int8 it peaks
+# ~1.84 GB RSS and runs ~3.6x realtime (only 4 decoder layers, so no slower
+# than "small" on CPU) while getting common kanji right that "small" missed
+# (同い年, 敬語, 担任). Loaded lazily and *released after each call*
+# (SOURCE_WHISPER_UNLOAD) — mining is rare, not worth holding ~1.8 GB while
+# the alignment service may want ~2.4 GB. Set to "small"/"medium" for less
+# RAM, "large-v3" for max quality (much slower on CPU).
+SOURCE_WHISPER_MODEL = os.environ.get(
+    "ANALYSIS_SOURCE_WHISPER_MODEL", "large-v3-turbo"
+)
+SOURCE_WHISPER_UNLOAD = os.environ.get("ANALYSIS_SOURCE_WHISPER_UNLOAD", "1") != "0"
 # A mined source is minutes long, not one sentence — its own, larger cap.
 MAX_SOURCE_AUDIO_BYTES = int(
     os.environ.get("ANALYSIS_MAX_SOURCE_AUDIO_BYTES", str(60 * 1024 * 1024))

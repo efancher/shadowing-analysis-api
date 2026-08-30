@@ -16,6 +16,7 @@ Two uses, two models:
 
 Both load lazily on first use (keep `systemd` startup fast).
 """
+import gc
 import threading
 from pathlib import Path
 
@@ -81,26 +82,44 @@ def transcribe_source(wav_path: Path) -> list[dict]:
     `condition_on_previous_text=False` curbs Whisper's repetition-loop
     hallucination on long audio. Blocking/CPU-bound — run via a thread.
     """
+    global _source_model
     with _source_lock:
         model = _get_source_model()
-        segments, _info = model.transcribe(
-            str(wav_path),
-            language="ja",
-            vad_filter=True,
-            condition_on_previous_text=False,
-        )
-        out: list[dict] = []
-        for seg in segments:
-            text = seg.text.strip()
-            if not text:
-                continue
-            out.append(
+        try:
+            segments = _run_source_transcribe(model, wav_path, vad=True)
+            if not segments:
+                # Silero VAD sometimes classifies an entire music-heavy track
+                # (a song, dense BGM) as non-speech and drops everything —
+                # losing real speech is worse than a stray hallucinated
+                # segment the reviewer can delete.
+                segments = _run_source_transcribe(model, wav_path, vad=False)
+            return [
                 {
-                    "text": text,
+                    "text": seg.text.strip(),
                     "startMs": max(0, round(seg.start * 1000)),
                     "endMs": max(round(seg.end * 1000), round(seg.start * 1000) + 1),
                     "avgLogprob": seg.avg_logprob,
                     "noSpeechProb": seg.no_speech_prob,
                 }
-            )
-        return out
+                for seg in segments
+                if seg.text.strip()
+            ]
+        finally:
+            if config.SOURCE_WHISPER_UNLOAD:
+                # Drops the Python object; CTranslate2 keeps some of its
+                # allocation pool for the process lifetime, so this reclaims
+                # roughly half of the ~1.8 GB, not all of it. Restart the
+                # service to fully reclaim.
+                del model
+                _source_model = None
+                gc.collect()
+
+
+def _run_source_transcribe(model: WhisperModel, wav_path: Path, *, vad: bool):
+    segments, _info = model.transcribe(
+        str(wav_path),
+        language="ja",
+        vad_filter=vad,
+        condition_on_previous_text=False,
+    )
+    return list(segments)
