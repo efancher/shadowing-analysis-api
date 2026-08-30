@@ -90,3 +90,52 @@ def test_transcribe_returns_422_when_audio_cannot_be_decoded(client, monkeypatch
 
     resp = client.post("/transcribe", files=_files())
     assert resp.status_code == 422
+
+
+def _mock_source_pipeline(monkeypatch, segments=None, error=None):
+    monkeypatch.setattr(main.audio, "transcoded_wav", _fake_transcoded_wav)
+
+    def fake_transcribe_source(_wav_path):
+        if error is not None:
+            raise error
+        return segments
+
+    monkeypatch.setattr(main.asr, "transcribe_source", fake_transcribe_source)
+
+
+def test_transcribe_source_returns_timed_segments(client, monkeypatch):
+    segs = [
+        {"text": "先生が本を読んでいた。", "startMs": 0, "endMs": 2500,
+         "avgLogprob": -0.3, "noSpeechProb": 0.01},
+        {"text": "静かな部屋だった。", "startMs": 2500, "endMs": 4800,
+         "avgLogprob": -0.4, "noSpeechProb": 0.02},
+    ]
+    _mock_source_pipeline(monkeypatch, segments=segs)
+    resp = client.post("/transcribe-source", files=_files())
+    assert resp.status_code == 200
+    assert resp.json() == {"segments": segs}
+
+
+def test_transcribe_source_rejects_empty_audio(client):
+    resp = client.post(
+        "/transcribe-source", files={"audio": ("s.opus", b"", "audio/ogg")}
+    )
+    assert resp.status_code == 422
+
+
+def test_transcribe_source_rejects_oversized_audio(client, monkeypatch):
+    monkeypatch.setattr(config, "MAX_SOURCE_AUDIO_BYTES", 4)
+    resp = client.post("/transcribe-source", files=_files())
+    assert resp.status_code == 422
+
+
+def test_transcribe_source_503_when_model_unavailable(client, monkeypatch):
+    _mock_source_pipeline(monkeypatch, error=asr.AsrUnavailableError("no model"))
+    resp = client.post("/transcribe-source", files=_files())
+    assert resp.status_code == 503
+
+
+def test_transcribe_source_500_on_unexpected_failure(client, monkeypatch):
+    _mock_source_pipeline(monkeypatch, error=RuntimeError("boom"))
+    resp = client.post("/transcribe-source", files=_files())
+    assert resp.status_code == 500

@@ -42,6 +42,17 @@ MAX_AUDIO_BYTES = int(os.environ.get("ANALYSIS_MAX_AUDIO_BYTES", str(20 * 1024 *
 # uses ~2.4 GB warm). See app/asr.py.
 WHISPER_MODEL = os.environ.get("ANALYSIS_WHISPER_MODEL", "base")
 
+# A larger model for full-source transcription (jp_sentence_splits mining
+# pipeline v2, POST /transcribe-source) — there the transcript IS the
+# product, so kanji/punctuation accuracy matters, unlike the diagnostic ASR
+# above. Lazily loaded on first mining run and kept resident. Set to "base"
+# on a tighter box; "medium" if there's RAM headroom.
+SOURCE_WHISPER_MODEL = os.environ.get("ANALYSIS_SOURCE_WHISPER_MODEL", "small")
+# A mined source is minutes long, not one sentence — its own, larger cap.
+MAX_SOURCE_AUDIO_BYTES = int(
+    os.environ.get("ANALYSIS_MAX_SOURCE_AUDIO_BYTES", str(60 * 1024 * 1024))
+)
+
 # The jp_sentence_splits frontend (deployed origin + local dev). Safe to
 # allow-list explicitly rather than wildcard — this is still only reachable
 # at all over the Tailscale tailnet, CORS is just an extra layer on top.

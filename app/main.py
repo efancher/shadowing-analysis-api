@@ -102,3 +102,36 @@ async def transcribe_audio(
         ) from exc
 
     return {"text": text}
+
+
+@app.post("/transcribe-source")
+async def transcribe_source_audio(
+    audio_file: UploadFile = File(..., alias="audio"),
+):
+    """Full-source ASR transcript for the jp_sentence_splits mining pipeline —
+    timed segments, larger model. Not a diagnostic signal like /transcribe."""
+    data = await audio_file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="audio must not be empty")
+    if len(data) > config.MAX_SOURCE_AUDIO_BYTES:
+        raise HTTPException(status_code=422, detail="audio too large")
+
+    try:
+        with audio.transcoded_wav(data) as wav_path:
+            try:
+                segments = await asyncio.to_thread(asr.transcribe_source, wav_path)
+            except asr.AsrUnavailableError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.warning("Source transcription failed: %s", exc)
+                raise HTTPException(
+                    status_code=500, detail="Transcription failed"
+                ) from exc
+    except audio.AudioTranscodeError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Could not decode audio: {exc}"
+        ) from exc
+
+    return {"segments": segments}

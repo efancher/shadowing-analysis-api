@@ -16,7 +16,13 @@ feature (see that repo's `docs/STATUS.md`, Phase 9). Two endpoints:
   learner's recording only, as a **secondary, non-authoritative** signal
   (Milestone 7) — never ground truth, since the expected transcript is
   already known. Used to flag "possible pronunciation difference" hints,
-  never to assert "you pronounced X incorrectly."
+  never to assert "you pronounced X incorrectly." Small `base` model.
+- **`/transcribe-source`** — full-source ASR for jp_sentence_splits' mining
+  pipeline v2: transcribe a whole mined video into timed segments. Here the
+  transcript *is* the product (YouTube's Japanese auto-captions have no
+  reliable kanji and no punctuation), so it uses a larger model
+  (`ANALYSIS_SOURCE_WHISPER_MODEL`, default `small`), loaded separately from
+  the `base` diagnostic model above.
 
 Like `voicevox-tts-api`, this service is intended to stay **tailnet-only**
 (Tailscale `serve`, never `funnel`/public). It has no authentication of its
@@ -154,8 +160,10 @@ All optional, via environment variables:
 | `ANALYSIS_API_PORT`            | `8002`                                                        | Documented default port            |
 | `ANALYSIS_MAX_TRANSCRIPT_LENGTH` | `200`                                                       | Max characters accepted by `/align`|
 | `ANALYSIS_MAX_AUDIO_BYTES`     | `20971520` (20 MB)                                            | Max upload size for `/align`/`/transcribe` |
+| `ANALYSIS_MAX_SOURCE_AUDIO_BYTES` | `62914560` (60 MB)                                         | Max upload size for `/transcribe-source` |
 | `ANALYSIS_ALLOWED_ORIGINS`     | `https://efancher.github.io,http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS allow-list |
-| `ANALYSIS_WHISPER_MODEL`       | `base`                                                        | faster-whisper model size (see above) |
+| `ANALYSIS_WHISPER_MODEL`       | `base`                                                        | faster-whisper model for `/transcribe` (diagnostic) |
+| `ANALYSIS_SOURCE_WHISPER_MODEL` | `small`                                                     | faster-whisper model for `/transcribe-source` (mining) |
 
 ## API
 
@@ -238,6 +246,30 @@ Errors: `422` for missing/empty/oversized audio, too-long `prompt`, or
 audio `ffmpeg` can't decode; `503` if the Whisper model can't load; `500`
 for an unexpected transcription failure. No persistent cache, same
 reasoning as `/align`.
+
+### `POST /transcribe-source`
+
+Multipart form: `audio` — a whole mined source recording (minutes long).
+Transcribes it into timed segments with the larger
+`ANALYSIS_SOURCE_WHISPER_MODEL` (default `small`); `vad_filter` skips
+music/silence, `condition_on_previous_text=False` curbs Whisper's
+long-audio repetition loops.
+
+```bash
+curl -X POST http://127.0.0.1:8002/transcribe-source -F "audio=@source.opus"
+```
+
+```json
+{ "segments": [
+  { "text": "…", "startMs": 0, "endMs": 2500,
+    "avgLogprob": -0.24, "noSpeechProb": 0.14 }
+] }
+```
+
+Errors as `/transcribe`. Used by jp_sentence_splits' mining pipeline as the
+cue source in place of YouTube's punctuation-free auto-captions; that box
+falls back to captions if this is unreachable, so it's fine to leave the
+service stopped when you're not mining.
 
 ## Tests
 
