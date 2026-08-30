@@ -21,8 +21,11 @@ feature (see that repo's `docs/STATUS.md`, Phase 9). Two endpoints:
   pipeline v2: transcribe a whole mined video into timed segments. Here the
   transcript *is* the product (YouTube's Japanese auto-captions have no
   reliable kanji and no punctuation), so it uses a larger model
-  (`ANALYSIS_SOURCE_WHISPER_MODEL`, default `small`), loaded separately from
-  the `base` diagnostic model above.
+  (`ANALYSIS_SOURCE_WHISPER_MODEL`, default `large-v3-turbo`), loaded
+  separately from the `base` diagnostic model above and released after each
+  run. Set `ANALYSIS_SOURCE_WHISPER_MODEL=large-v3` for maximum accuracy
+  (~3.5 GB RSS, ~4× slower on CPU); `small`/`medium` to trade accuracy for
+  RAM.
 
 Like `voicevox-tts-api`, this service is intended to stay **tailnet-only**
 (Tailscale `serve`, never `funnel`/public). It has no authentication of its
@@ -72,17 +75,29 @@ lexicon FST compilation), then **~1-3s per alignment** after that. This app
 loaded state in memory for the life of the process — the systemd service
 below is expected to stay running, not restart per request.
 
-## Why ASR uses the `base` model, not `small`
+## Whisper model sizes
 
-faster-whisper's Kaldi/pynini-free CTranslate2 wheels install with plain
-pip (no conda needed, unlike MFA) — but model *size* still matters on this
-host: the alignment service alone uses ~2.4 GB RSS once warm, and this box
-had only ~1.5 GB genuinely free when ASR was added (several other personal
-services/sessions share it). Measured before choosing: `base` at int8
-quantization uses **~270 MB RSS** and transcribed a test clip exactly
-right in ~2s — `small` was estimated at ~2 GB, too risky to add on top.
-`ANALYSIS_WHISPER_MODEL` is configurable if more headroom becomes
-available later.
+Two ASR paths, two models (see `app/asr.py`):
+
+**`/transcribe` (diagnostic) — `base`.** faster-whisper's
+Kaldi/pynini-free CTranslate2 wheels install with plain pip — but model
+*size* matters on this host: the alignment service alone uses ~2.4 GB RSS
+once warm, and this box had ~1.5 GB genuinely free when ASR was added.
+Measured: `base` int8 uses **~270 MB RSS** and transcribed a test clip
+exactly right in ~2s. It only flags "possible pronunciation difference"
+hints — the expected transcript is already known — so `base` is plenty.
+Kept resident (the service is expected to stay running).
+
+**`/transcribe-source` (mining) — `large-v3-turbo`.** Here the transcript
+*is* the product. Measured on real drama sources: `small` garbled common
+kanji (同い年→おないどし, 敬語→傾語, 担任→単人); `large-v3-turbo` has only 4
+decoder layers so on CPU it's no slower (~1.5–3.6× realtime) yet gets those
+right, plus names (佐藤裕二, 上村玲香). Peaks **~1.84 GB RSS**, released
+after each run (`ANALYSIS_SOURCE_WHISPER_UNLOAD`, default on — CTranslate2
+keeps ~half its allocation pool for the process, so this reclaims ~900 MB,
+not all; restart to fully reclaim). Set
+`ANALYSIS_SOURCE_WHISPER_MODEL=large-v3` for maximum accuracy (~3.5 GB RSS,
+~4× slower on CPU), or `small`/`medium` to trade accuracy for RAM.
 
 ## Install
 
@@ -163,7 +178,8 @@ All optional, via environment variables:
 | `ANALYSIS_MAX_SOURCE_AUDIO_BYTES` | `62914560` (60 MB)                                         | Max upload size for `/transcribe-source` |
 | `ANALYSIS_ALLOWED_ORIGINS`     | `https://efancher.github.io,http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS allow-list |
 | `ANALYSIS_WHISPER_MODEL`       | `base`                                                        | faster-whisper model for `/transcribe` (diagnostic) |
-| `ANALYSIS_SOURCE_WHISPER_MODEL` | `small`                                                     | faster-whisper model for `/transcribe-source` (mining) |
+| `ANALYSIS_SOURCE_WHISPER_MODEL` | `large-v3-turbo`                                            | faster-whisper model for `/transcribe-source` (mining); `large-v3` for max accuracy, `small`/`medium` for less RAM |
+| `ANALYSIS_SOURCE_WHISPER_UNLOAD` | `1`                                                        | Release the source model after each `/transcribe-source` (set `0` to keep it resident) |
 
 ## API
 
@@ -251,9 +267,10 @@ reasoning as `/align`.
 
 Multipart form: `audio` — a whole mined source recording (minutes long).
 Transcribes it into timed segments with the larger
-`ANALYSIS_SOURCE_WHISPER_MODEL` (default `small`); `vad_filter` skips
-music/silence, `condition_on_previous_text=False` curbs Whisper's
-long-audio repetition loops.
+`ANALYSIS_SOURCE_WHISPER_MODEL` (default `large-v3-turbo`).
+`condition_on_previous_text=False` curbs Whisper's long-audio repetition
+loops; `vad_filter` skips music/silence, with a no-VAD retry when it drops
+everything (a whole song track can read as non-speech to Silero).
 
 ```bash
 curl -X POST http://127.0.0.1:8002/transcribe-source -F "audio=@source.opus"
