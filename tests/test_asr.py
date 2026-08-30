@@ -106,14 +106,36 @@ def _mock_source_pipeline(monkeypatch, segments=None, error=None):
 def test_transcribe_source_returns_timed_segments(client, monkeypatch):
     segs = [
         {"text": "先生が本を読んでいた。", "startMs": 0, "endMs": 2500,
-         "avgLogprob": -0.3, "noSpeechProb": 0.01},
+         "avgLogprob": -0.3, "noSpeechProb": 0.01,
+         "words": [{"text": "先生", "startMs": 0, "endMs": 600}]},
         {"text": "静かな部屋だった。", "startMs": 2500, "endMs": 4800,
-         "avgLogprob": -0.4, "noSpeechProb": 0.02},
+         "avgLogprob": -0.4, "noSpeechProb": 0.02, "words": []},
     ]
     _mock_source_pipeline(monkeypatch, segments=segs)
     resp = client.post("/transcribe-source", files=_files())
     assert resp.status_code == 200
     assert resp.json() == {"segments": segs}
+
+
+def test_words_out_maps_whisper_word_objects():
+    import dataclasses
+
+    from app.asr import _words_out
+
+    @dataclasses.dataclass
+    class _W:
+        start: float
+        end: float
+        word: str
+        probability: float = 0.9
+
+    class _Seg:
+        words = [_W(0.0, 0.42, "先生"), _W(0.42, 0.5, " "), _W(0.5, 1.1, "が")]
+
+    assert _words_out(_Seg()) == [
+        {"text": "先生", "startMs": 0, "endMs": 420},
+        {"text": "が", "startMs": 500, "endMs": 1100},
+    ]
 
 
 def test_transcribe_source_rejects_empty_audio(client):
@@ -150,6 +172,7 @@ def test_transcribe_source_retries_without_vad_when_vad_drops_everything(monkeyp
         def __init__(self, text):
             self.text, self.start, self.end = text, 0.0, 1.0
             self.avg_logprob, self.no_speech_prob = -0.3, 0.1
+            self.words = None
 
     def fake_run(_model, _wav, *, vad):
         calls.append(vad)

@@ -100,6 +100,7 @@ def transcribe_source(wav_path: Path) -> list[dict]:
                     "endMs": max(round(seg.end * 1000), round(seg.start * 1000) + 1),
                     "avgLogprob": seg.avg_logprob,
                     "noSpeechProb": seg.no_speech_prob,
+                    "words": _words_out(seg),
                 }
                 for seg in segments
                 if seg.text.strip()
@@ -121,5 +122,18 @@ def _run_source_transcribe(model: WhisperModel, wav_path: Path, *, vad: bool):
         language="ja",
         vad_filter=vad,
         condition_on_previous_text=False,
+        word_timestamps=config.SOURCE_WORD_TIMESTAMPS,
     )
     return list(segments)
+
+
+def _words_out(seg) -> list[dict]:
+    return [
+        {
+            "text": w.word.strip(),
+            "startMs": max(0, round(w.start * 1000)),
+            "endMs": max(round(w.end * 1000), round(w.start * 1000) + 1),
+        }
+        for w in (seg.words or [])
+        if w.word and w.word.strip()
+    ]

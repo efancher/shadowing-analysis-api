@@ -180,6 +180,7 @@ All optional, via environment variables:
 | `ANALYSIS_WHISPER_MODEL`       | `base`                                                        | faster-whisper model for `/transcribe` (diagnostic) |
 | `ANALYSIS_SOURCE_WHISPER_MODEL` | `large-v3-turbo`                                            | faster-whisper model for `/transcribe-source` (mining); `large-v3` for max accuracy, `small`/`medium` for less RAM |
 | `ANALYSIS_SOURCE_WHISPER_UNLOAD` | `1`                                                        | Release the source model after each `/transcribe-source` (set `0` to keep it resident) |
+| `ANALYSIS_SOURCE_WORD_TIMESTAMPS` | `1`                                                       | Per-word timings on `/transcribe-source` (for word-gap sentence splitting); costs ~2.5–3× the transcription time — set `0` for speed |
 
 ## API
 
@@ -279,9 +280,12 @@ curl -X POST http://127.0.0.1:8002/transcribe-source -F "audio=@source.opus"
 ```json
 { "segments": [
   { "text": "…", "startMs": 0, "endMs": 2500,
-    "avgLogprob": -0.24, "noSpeechProb": 0.14 }
+    "avgLogprob": -0.24, "noSpeechProb": 0.14,
+    "words": [ { "text": "…", "startMs": 0, "endMs": 600 } ] }
 ] }
 ```
+
+`words` is `[]` when `ANALYSIS_SOURCE_WORD_TIMESTAMPS=0`.
 
 Errors as `/transcribe`. Used by jp_sentence_splits' mining pipeline as the
 cue source in place of YouTube's punctuation-free auto-captions; that box
