@@ -59,9 +59,17 @@ SOURCE_WHISPER_UNLOAD = os.environ.get("ANALYSIS_SOURCE_WHISPER_UNLOAD", "1") !=
 # Per-word timestamps for `/transcribe-source` — lets the mining pipeline
 # split a multi-sentence segment at a real word gap. The DTW alignment pass
 # costs ~2.5–3x the transcription time (measured: 2m20s → 6m20s for an
-# 8-min source), so set `0` if mines feel too slow and you're fine with the
-# char-proportional split fallback.
-SOURCE_WORD_TIMESTAMPS = os.environ.get("ANALYSIS_SOURCE_WORD_TIMESTAMPS", "1") != "0"
+# 8-min source). Values: "1"/"0" force on/off; "auto" (default) turns it on
+# unless the source is longer than SOURCE_WORD_TIMESTAMPS_MAX_MINUTES, where
+# the tripled runtime would risk the mining client's ASR timeout and drop
+# the whole job to auto-captions.
+_SWT = os.environ.get("ANALYSIS_SOURCE_WORD_TIMESTAMPS", "auto").strip().lower()
+SOURCE_WORD_TIMESTAMPS: bool | str = (
+    "auto" if _SWT == "auto" else _SWT not in ("0", "false", "no", "off")
+)
+SOURCE_WORD_TIMESTAMPS_MAX_MINUTES = float(
+    os.environ.get("ANALYSIS_SOURCE_WORD_TIMESTAMPS_MAX_MINUTES", "40")
+)
 # A mined source is minutes long, not one sentence — its own, larger cap.
 MAX_SOURCE_AUDIO_BYTES = int(
     os.environ.get("ANALYSIS_MAX_SOURCE_AUDIO_BYTES", str(60 * 1024 * 1024))

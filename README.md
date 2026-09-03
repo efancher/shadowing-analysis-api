@@ -180,7 +180,8 @@ All optional, via environment variables:
 | `ANALYSIS_WHISPER_MODEL`       | `base`                                                        | faster-whisper model for `/transcribe` (diagnostic) |
 | `ANALYSIS_SOURCE_WHISPER_MODEL` | `large-v3-turbo`                                            | faster-whisper model for `/transcribe-source` (mining); `large-v3` for max accuracy, `small`/`medium` for less RAM |
 | `ANALYSIS_SOURCE_WHISPER_UNLOAD` | `1`                                                        | Release the source model after each `/transcribe-source` (set `0` to keep it resident) |
-| `ANALYSIS_SOURCE_WORD_TIMESTAMPS` | `1`                                                       | Per-word timings on `/transcribe-source` (for word-gap sentence splitting); costs ~2.5–3× the transcription time — set `0` for speed |
+| `ANALYSIS_SOURCE_WORD_TIMESTAMPS` | `auto`                                                    | Per-word timings on `/transcribe-source` (for word-gap sentence splitting); costs ~2.5–3× the transcription time. `auto` = on for sources ≤ `…_MAX_MINUTES`, off above; `1`/`0` force |
+| `ANALYSIS_SOURCE_WORD_TIMESTAMPS_MAX_MINUTES` | `40`                                          | With `…_WORD_TIMESTAMPS=auto`, the source length above which word timings are skipped (the 3× DTW pass would risk the mining client's ASR timeout) |
 
 ## API
 
@@ -285,7 +286,8 @@ curl -X POST http://127.0.0.1:8002/transcribe-source -F "audio=@source.opus"
 ] }
 ```
 
-`words` is `[]` when `ANALYSIS_SOURCE_WORD_TIMESTAMPS=0`.
+`words` is `[]` when word timestamps are off (`ANALYSIS_SOURCE_WORD_TIMESTAMPS=0`,
+or `auto` with a source longer than `…_MAX_MINUTES`).
 
 Errors as `/transcribe`. Used by jp_sentence_splits' mining pipeline as the
 cue source in place of YouTube's punctuation-free auto-captions; that box

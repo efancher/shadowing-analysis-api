@@ -174,15 +174,39 @@ def test_transcribe_source_retries_without_vad_when_vad_drops_everything(monkeyp
             self.avg_logprob, self.no_speech_prob = -0.3, 0.1
             self.words = None
 
-    def fake_run(_model, _wav, *, vad):
-        calls.append(vad)
+    def fake_run(_model, _wav, *, vad, word_ts):
+        calls.append((vad, word_ts))
         return [] if vad else [_Seg("歌詞だよ。")]
 
     monkeypatch.setattr(asr, "_run_source_transcribe", fake_run)
     monkeypatch.setattr(asr, "_get_source_model", lambda: object())
+    monkeypatch.setattr(asr, "_want_word_timestamps", lambda _p: True)
     monkeypatch.setattr(config, "SOURCE_WHISPER_UNLOAD", False)
 
     out = asr.transcribe_source(Path("/tmp/fake.wav"))
 
-    assert calls == [True, False]
+    assert calls == [(True, True), (False, True)]  # word_ts resolved once, reused
     assert [s["text"] for s in out] == ["歌詞だよ。"]
+
+
+def test_want_word_timestamps_auto_off_for_a_long_source(monkeypatch):
+    monkeypatch.setattr(config, "SOURCE_WORD_TIMESTAMPS", "auto")
+    monkeypatch.setattr(config, "SOURCE_WORD_TIMESTAMPS_MAX_MINUTES", 40.0)
+
+    monkeypatch.setattr(asr, "_probe_duration_seconds", lambda _p: 20 * 60)
+    assert asr._want_word_timestamps(Path("/x.wav")) is True
+
+    monkeypatch.setattr(asr, "_probe_duration_seconds", lambda _p: 55 * 60)
+    assert asr._want_word_timestamps(Path("/x.wav")) is False
+
+    # Can't probe → try it, the client timeout is the backstop.
+    monkeypatch.setattr(asr, "_probe_duration_seconds", lambda _p: None)
+    assert asr._want_word_timestamps(Path("/x.wav")) is True
+
+
+def test_want_word_timestamps_explicit_setting_ignores_duration(monkeypatch):
+    monkeypatch.setattr(asr, "_probe_duration_seconds", lambda _p: 90 * 60)
+    monkeypatch.setattr(config, "SOURCE_WORD_TIMESTAMPS", True)
+    assert asr._want_word_timestamps(Path("/x.wav")) is True
+    monkeypatch.setattr(config, "SOURCE_WORD_TIMESTAMPS", False)
+    assert asr._want_word_timestamps(Path("/x.wav")) is False

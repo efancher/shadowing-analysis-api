@@ -5,6 +5,12 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/projects/shadowing-analysis-api
+# `/transcribe-source` per-word timestamps: the DTW pass is single-threaded
+# and ~3x the transcription time, which on a 32-min source blew the mining
+# client's (then 30-min, now 3600s) ASR timeout → whole job fell back to
+# auto-captions. "auto" keeps them on for sources ≤ 40 min and off above
+# that. Set to "0" to disable entirely, "1" to force on.
+Environment=ANALYSIS_SOURCE_WORD_TIMESTAMPS=auto
 ExecStart=%h/miniforge3/envs/mfa/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002
 Restart=on-failure
 RestartSec=5

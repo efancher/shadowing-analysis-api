@@ -17,12 +17,48 @@ Two uses, two models:
 Both load lazily on first use (keep `systemd` startup fast).
 """
 import gc
+import logging
+import subprocess
 import threading
 from pathlib import Path
 
 from faster_whisper import WhisperModel
 
 from app import config
+
+log = logging.getLogger("shadowing_analysis.asr")
+
+
+def _probe_duration_seconds(wav_path: Path) -> float | None:
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nk=1:nw=1", str(wav_path)],
+            check=True, capture_output=True, text=True,
+        )
+        return float(out.stdout.strip())
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return None
+
+
+def _want_word_timestamps(wav_path: Path) -> bool:
+    """Resolve `SOURCE_WORD_TIMESTAMPS` — `"auto"` turns word timings off for
+    a source long enough that the ~3x DTW pass would risk the mining
+    client's ASR timeout (→ the whole job falls back to auto-captions)."""
+    setting = config.SOURCE_WORD_TIMESTAMPS
+    if setting != "auto":
+        return bool(setting)
+    duration = _probe_duration_seconds(wav_path)
+    if duration is None:
+        return True  # can't tell — try it; the client timeout is the backstop
+    limit = config.SOURCE_WORD_TIMESTAMPS_MAX_MINUTES * 60
+    if duration > limit:
+        log.info(
+            "source is %.0fs (> %.0fs) — skipping word timestamps to stay "
+            "under the ASR timeout", duration, limit,
+        )
+        return False
+    return True
 
 
 class AsrUnavailableError(RuntimeError):
@@ -85,14 +121,15 @@ def transcribe_source(wav_path: Path) -> list[dict]:
     global _source_model
     with _source_lock:
         model = _get_source_model()
+        word_ts = _want_word_timestamps(wav_path)
         try:
-            segments = _run_source_transcribe(model, wav_path, vad=True)
+            segments = _run_source_transcribe(model, wav_path, vad=True, word_ts=word_ts)
             if not segments:
                 # Silero VAD sometimes classifies an entire music-heavy track
                 # (a song, dense BGM) as non-speech and drops everything —
                 # losing real speech is worse than a stray hallucinated
                 # segment the reviewer can delete.
-                segments = _run_source_transcribe(model, wav_path, vad=False)
+                segments = _run_source_transcribe(model, wav_path, vad=False, word_ts=word_ts)
             return [
                 {
                     "text": seg.text.strip(),
@@ -116,13 +153,13 @@ def transcribe_source(wav_path: Path) -> list[dict]:
                 gc.collect()
 
 
-def _run_source_transcribe(model: WhisperModel, wav_path: Path, *, vad: bool):
+def _run_source_transcribe(model: WhisperModel, wav_path: Path, *, vad: bool, word_ts: bool):
     segments, _info = model.transcribe(
         str(wav_path),
         language="ja",
         vad_filter=vad,
         condition_on_previous_text=False,
-        word_timestamps=config.SOURCE_WORD_TIMESTAMPS,
+        word_timestamps=word_ts,
     )
     return list(segments)
 
