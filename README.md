@@ -150,6 +150,21 @@ would otherwise stop when your last session ends), enable linger once
 sudo loginctl enable-linger "$USER"
 ```
 
+### Weekly restart (memory)
+
+MFA/kalpy does not fully release per-alignment memory — measured ~2.3 GB
+RSS warm, drifting to ~4.7 GB after a week + a few thousand alignments on
+the 8 GB box (into swap). The included timer restarts the service every
+Sunday at 04:00; `try-restart` is a no-op if it's already stopped, and the
+next `/align` pays the one-off ~45 s cold start.
+
+```bash
+cp shadowing-analysis-api-restart.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now shadowing-analysis-api-restart.timer
+systemctl --user list-timers shadowing-analysis-api-restart
+```
+
 ### Exposing over Tailscale (tailnet-only)
 
 ```bash

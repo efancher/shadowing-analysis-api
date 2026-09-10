@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly restart timer for shadowing-analysis-api
+
+[Timer]
+# Sunday 04:00 local, with jitter, and catch up if the box was off.
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

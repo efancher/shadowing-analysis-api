@@ -1,0 +1,14 @@
+[Unit]
+Description=Weekly restart of shadowing-analysis-api
+Documentation=https://github.com/efancher/shadowing-analysis-api
+# Pointless if the main service was never installed.
+Requisite=shadowing-analysis-api.service
+
+[Service]
+Type=oneshot
+# MFA/kalpy does not fully release per-alignment memory: measured ~2.3 GB
+# RSS warm, drifting to ~4.7 GB after ~1 week + a few thousand alignments
+# on the 8 GB analysis box (pushing it into swap). A weekly restart keeps
+# it near the warm baseline. `try-restart` = no-op if the service is
+# already stopped; the next `/align` pays the ~45 s cold-start once.
+ExecStart=/usr/bin/systemctl --user try-restart shadowing-analysis-api.service
