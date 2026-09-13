@@ -11,6 +11,14 @@ WorkingDirectory=%h/projects/shadowing-analysis-api
 # auto-captions. "auto" keeps them on for sources ≤ 40 min and off above
 # that. Set to "0" to disable entirely, "1" to force on.
 Environment=ANALYSIS_SOURCE_WORD_TIMESTAMPS=auto
+# Default (200) was sized for the original one-sentence reference-alignment
+# use case. jp_sentence_splits' NHK Easy import (2026-09-13) aligns a whole
+# short article (several sentences) in one /align call instead of one call
+# per sentence, and real data showed 80% of a 50-article sample exceed 200
+# chars once joined (median 239, max 335) — 500 covers that with headroom
+# for longer articles too, still far short of anything that would meaningfully
+# change per-call compute/memory on this box.
+Environment=ANALYSIS_MAX_TRANSCRIPT_LENGTH=500
 ExecStart=%h/miniforge3/envs/mfa/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002
 Restart=on-failure
 RestartSec=5
