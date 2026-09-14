@@ -75,6 +75,18 @@ MAX_SOURCE_AUDIO_BYTES = int(
     os.environ.get("ANALYSIS_MAX_SOURCE_AUDIO_BYTES", str(60 * 1024 * 1024))
 )
 
+# MFA's forced-alignment beam search occasionally can't find any path at the
+# default beam (10) — observed in practice on short, isolated single-word
+# clips (jp_sentence_splits' pitch-accent drill records one word at a time,
+# a harder case than a full sentence) even though `align_utterance_online`
+# already auto-retries once internally at `beam * 4`. On that failure,
+# `app/aligner.py` retries the whole alignment once more at this much wider
+# beam (with its own `* 4` retry_beam) before giving up. Deliberately NOT
+# the default for every call: a wider beam costs real CPU per alignment, so
+# paying it universally would slow down the common case (which already
+# succeeds at the narrow beam) to rescue the rare one.
+ALIGN_FAILURE_RETRY_BEAM = int(os.environ.get("ANALYSIS_ALIGN_FAILURE_RETRY_BEAM", "50"))
+
 # The jp_sentence_splits frontend (deployed origin + local dev). Safe to
 # allow-list explicitly rather than wildcard — this is still only reachable
 # at all over the Tailscale tailnet, CORS is just an extra layer on top.

@@ -13,11 +13,13 @@ single-utterance alignments (measured ~1.5s each afterward). See
 docs/STATUS.md Phase 9, Milestone 2a in jp_sentence_splits for the full
 investigation.
 """
+import logging
 import re
 import threading
 from pathlib import Path
 from typing import TypedDict
 
+from kalpy.exceptions import AlignerError
 from kalpy.feat.cmvn import CmvnComputer
 from kalpy.fstext.lexicon import LexiconCompiler
 from kalpy.utterance import Segment
@@ -27,6 +29,8 @@ from montreal_forced_aligner.online.alignment import align_utterance_online
 from montreal_forced_aligner.tokenization.spacy import generate_language_tokenizer
 
 from app import config
+
+logger = logging.getLogger("shadowing_analysis_api")
 
 
 class PhoneInterval(TypedDict):
@@ -125,12 +129,30 @@ def align(wav_path: Path, transcript: str) -> AlignmentResult:
         utterance.generate_mfccs(state.acoustic_model.mfcc_computer)
         cmvn = CmvnComputer().compute_cmvn_from_features([utterance.mfccs])
         utterance.apply_cmvn(cmvn)
-        ctm = align_utterance_online(
-            state.acoustic_model,
-            utterance,
-            state.lexicon_compiler,
-            tokenizer=state.tokenizer,
-        )
+        try:
+            ctm = align_utterance_online(
+                state.acoustic_model,
+                utterance,
+                state.lexicon_compiler,
+                tokenizer=state.tokenizer,
+            )
+        except AlignerError:
+            # The default beam (10, auto-retried once at 4x internally)
+            # found no path at all — seen in practice on short, isolated
+            # single-word clips. One more attempt at a much wider beam
+            # before giving up; see config.ALIGN_FAILURE_RETRY_BEAM.
+            logger.warning(
+                "Alignment failed at the default beam; retrying at beam=%d",
+                config.ALIGN_FAILURE_RETRY_BEAM,
+            )
+            ctm = align_utterance_online(
+                state.acoustic_model,
+                utterance,
+                state.lexicon_compiler,
+                tokenizer=state.tokenizer,
+                beam=config.ALIGN_FAILURE_RETRY_BEAM,
+                retry_beam=config.ALIGN_FAILURE_RETRY_BEAM * 4,
+            )
 
     words: list[WordInterval] = []
     duration = 0.0

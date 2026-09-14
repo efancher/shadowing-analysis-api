@@ -189,6 +189,7 @@ All optional, via environment variables:
 | `ANALYSIS_API_HOST`            | `127.0.0.1`                                                   | Documented default host            |
 | `ANALYSIS_API_PORT`            | `8002`                                                        | Documented default port            |
 | `ANALYSIS_MAX_TRANSCRIPT_LENGTH` | `200`                                                       | Max characters accepted by `/align`|
+| `ANALYSIS_ALIGN_FAILURE_RETRY_BEAM` | `50`                                                    | Beam width for a single retry when the default beam (10, auto-retried once at 4×) finds no alignment path at all — seen on short, isolated single-word `/align` clips |
 | `ANALYSIS_MAX_AUDIO_BYTES`     | `20971520` (20 MB)                                            | Max upload size for `/align`/`/transcribe` |
 | `ANALYSIS_MAX_SOURCE_AUDIO_BYTES` | `62914560` (60 MB)                                         | Max upload size for `/transcribe-source` |
 | `ANALYSIS_ALLOWED_ORIGINS`     | `https://efancher.github.io,http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS allow-list |
