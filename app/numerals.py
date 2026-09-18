@@ -24,30 +24,45 @@ file (`japanese_mfa.dict`):
     cases too, so whatever this tokenizer does with a literal space
     character, it isn't "treat it as a word boundary."
 
-What does work, partially: day-of-month and month-name readings are
-closed, frequently-occurring vocabulary, and the dictionary FILE has a
-literal whole-compound hiragana entry for every single one (1-31日
-including the irregulars, 1-12月). But a live end-to-end sweep against
-`/align` (all 43 values, see docs/STATUS.md 2026-09-18) showed the
-dictionary entry alone doesn't guarantee success: the tokenizer routinely
-splits the substituted reading into smaller pieces *before* lexicon lookup
-(e.g. じゅうろくにち -> "じゅう" + "ろくにち") regardless of the whole
-string being a real dictionary entry, and only succeeds when *every*
-resulting piece independently happens to also be real vocabulary. Result:
-**12/12 months fixed, 19/31 days fixed** — the day failures (3, 13, 16-19,
-23, 26-30) all split into a tens-prefix plus a "roku/shichi/hachi/ku/san +
-にち" remainder that isn't real vocabulary on its own (unlike the
-succeeding ones, e.g. いちにち/よっか/はつか are real standalone words).
-Not pursued further: getting the remaining 12 right would mean
-influencing the tokenizer's own segmentation model, not just the input
-text — out of reach without deeper MFA/spaCy-tokenizer surgery. A day
-that still fails behaves exactly as before this fix (still `<unk>`, same
-cascade) — never worse, just not universally better.
+What does work: day-of-month and month-name readings are closed,
+frequently-occurring vocabulary, and the dictionary FILE has a literal
+whole-compound hiragana entry for every single one (1-31日 including the
+irregulars, 1-12月). But a live end-to-end sweep against `/align` (all 43
+values, docs/STATUS.md 2026-09-18) showed the dictionary entry alone
+doesn't guarantee success: the tokenizer routinely splits the substituted
+reading into smaller pieces *before* lexicon lookup (e.g. じゅうろくにち
+-> "じゅう" + "ろくにち") regardless of the whole string being a real
+dictionary entry, and only succeeds when *every* resulting piece
+independently happens to also be real vocabulary.
+
+Getting the tokenizer to keep the compound whole isn't achievable from
+input text alone (see git history — a forced space boundary was tried and
+regressed already-working cases). What *is* achievable: querying the same
+spaCy tokenizer directly (`generate_language_tokenizer`) shows exactly
+which fragment it produces for each failing value, and every failing
+tens-prefixed day (13, 16-19, 23, 26-30) reduces to one of six recurring
+"ones-digit + にち" remainders — さんにち/ろくにち/しちにち/はちにち/
+くにち/じゅうにち — none of which are independent vocabulary. Their
+correct phones aren't a guess: each is the verified whole-compound's
+phone sequence (already a real dictionary entry) with the verified
+prefix's phones removed from the front, cross-checked two ways (the same
+remainder falls out whether you subtract from the じゅう-compound or the
+にじゅう-compound) — added to `app/data/supplementary_dictionary.dict`
+once confirmed. Result: **12/12 months, 30/31 days**. The one holdout,
+day 3 (みっか -> "みっ" + "か"), is different in kind: the tokenizer's
+split falls *inside* a sokuon gemination (the っ's length is realized on
+the following consonant, not attributable to either resulting token
+cleanly), so there's no confident way to assign phones to "みっ" the way
+there was for the others — deliberately left alone rather than guess at a
+phonetic entry with no verified data to derive it from. A day that still
+fails behaves exactly as before this fix (still `<unk>`, same cascade) —
+never worse, just not fixed.
 
 Other counters (番, 年) are NOT covered: 8番/2024年 are open-ended
 constructions, not closed vocabulary — grep found no compound entry for
 any value tried, kana or kanji, so there is nothing this function can
-substitute that would actually resolve.
+substitute that would actually resolve, and no verified data to derive
+missing-fragment phones from the way there was for 日/月.
 """
 from __future__ import annotations
 

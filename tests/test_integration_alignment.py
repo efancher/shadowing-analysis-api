@@ -61,3 +61,26 @@ def test_real_alignment_resolves_supplementary_dictionary_word():
     words = [w["text"] for w in result["words"] if w["text"] not in ("", "<eps>", "sil")]
     assert "<unk>" not in words
     assert "足んねえ" in words
+
+
+@pytest.mark.skipif(not aligner.models_present(), reason="MFA models not downloaded")
+def test_real_alignment_resolves_arabic_digit_date():
+    """Mined transcripts write dates as arabic digits (16日); the aligner's
+    dictionary has no entry for a bare digit string, so app/numerals.py
+    expands it to its hiragana reading (じゅうろくにち) before alignment.
+    That alone wasn't enough — the tokenizer splits it into "じゅう" +
+    "ろくにち" before lexicon lookup, and "ろくにち" isn't independent
+    vocabulary — so app/data/supplementary_dictionary.dict also has an
+    entry for it (and five siblings), derived from already-verified
+    compound entries rather than guessed (docs/STATUS.md 2026-09-18)."""
+    text = "16日です"
+    audio_bytes = _synthesize("じゅうろくにちです")
+    if audio_bytes is None:
+        pytest.skip("VOICEVOX TTS wrapper not reachable at 127.0.0.1:8001")
+
+    with transcoded_wav(audio_bytes) as wav_path:
+        result = aligner.align(wav_path, text)
+
+    words = [w["text"] for w in result["words"] if w["text"] not in ("", "<eps>", "sil")]
+    assert "<unk>" not in words
+    assert words == ["じゅう", "ろくにち", "です"]
