@@ -29,6 +29,7 @@ from montreal_forced_aligner.online.alignment import align_utterance_online
 from montreal_forced_aligner.tokenization.spacy import generate_language_tokenizer
 
 from app import config
+from app.numerals import expand_date_numerals
 
 logger = logging.getLogger("shadowing_analysis_api")
 
@@ -125,7 +126,7 @@ def align(wav_path: Path, transcript: str) -> AlignmentResult:
     with _lock:
         state = _get_state()
         segment = Segment(wav_path, 0, None, 0)
-        utterance = KalpyUtterance(segment, transcript)
+        utterance = KalpyUtterance(segment, expand_date_numerals(transcript))
         utterance.generate_mfccs(state.acoustic_model.mfcc_computer)
         cmvn = CmvnComputer().compute_cmvn_from_features([utterance.mfccs])
         utterance.apply_cmvn(cmvn)
