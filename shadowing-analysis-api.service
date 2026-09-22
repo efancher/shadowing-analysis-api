@@ -14,11 +14,16 @@ Environment=ANALYSIS_SOURCE_WORD_TIMESTAMPS=auto
 # Default (200) was sized for the original one-sentence reference-alignment
 # use case. jp_sentence_splits' NHK Easy import (2026-09-13) aligns a whole
 # short article (several sentences) in one /align call instead of one call
-# per sentence, and real data showed 80% of a 50-article sample exceed 200
-# chars once joined (median 239, max 335) — 500 covers that with headroom
-# for longer articles too, still far short of anything that would meaningfully
-# change per-call compute/memory on this box.
-Environment=ANALYSIS_MAX_TRANSCRIPT_LENGTH=500
+# per sentence. First raised to 500 on real data (80% of a 50-article sample
+# exceed 200 chars once joined; median 239, max 335) but that cap was sized
+# against one day's sample, not a real bound — article length is unbounded
+# by nature and a longer-than-usual article already hit 500 and 422'd
+# (2026-09-14). Raised again to 2000, generous headroom over any real NHK
+# Easy article, still far short of anything that would meaningfully change
+# per-call compute/memory on this box. Still not a durable fix for an
+# unbounded input — see docs/ROADMAP.md in jp_sentence_splits for the
+# per-sentence-alignment alternative that would actually close this out.
+Environment=ANALYSIS_MAX_TRANSCRIPT_LENGTH=2000
 ExecStart=%h/miniforge3/envs/mfa/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002
 Restart=on-failure
 RestartSec=5
