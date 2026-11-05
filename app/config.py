@@ -94,3 +94,14 @@ ALLOWED_ORIGINS = os.environ.get(
     "ANALYSIS_ALLOWED_ORIGINS",
     "https://efancher.github.io,http://localhost:5173,http://127.0.0.1:5173",
 ).split(",")
+
+# Whisper `hotwords` for /transcribe-source. Slow, clearly-spoken learner
+# Japanese often comes back all-hiragana (わたしは、いまは…すんでいます);
+# a sample in ordinary kanji-kana orthography biases decoding toward kanji.
+# `hotwords` (not `initial_prompt`) because faster-whisper re-injects it into
+# every 30 s window, whereas the initial prompt is dropped after window 1
+# once condition_on_previous_text=False. Empty string disables.
+SOURCE_HOTWORDS = os.environ.get(
+    "ANALYSIS_SOURCE_HOTWORDS",
+    "私は今、大きな町に住んでいます。今日は日本語で話します。",
+).strip()

@@ -210,3 +210,20 @@ def test_want_word_timestamps_explicit_setting_ignores_duration(monkeypatch):
     assert asr._want_word_timestamps(Path("/x.wav")) is True
     monkeypatch.setattr(config, "SOURCE_WORD_TIMESTAMPS", False)
     assert asr._want_word_timestamps(Path("/x.wav")) is False
+
+
+def test_source_transcribe_passes_hotwords(monkeypatch):
+    seen = {}
+
+    class FakeModel:
+        def transcribe(self, _path, **kwargs):
+            seen.update(kwargs)
+            return iter(()), None
+
+    monkeypatch.setattr(config, "SOURCE_HOTWORDS", "私は町に住んでいます。")
+    asr._run_source_transcribe(FakeModel(), Path("/tmp/fake.wav"), vad=True, word_ts=False)
+    assert seen["hotwords"] == "私は町に住んでいます。"
+
+    monkeypatch.setattr(config, "SOURCE_HOTWORDS", "")
+    asr._run_source_transcribe(FakeModel(), Path("/tmp/fake.wav"), vad=True, word_ts=False)
+    assert seen["hotwords"] is None

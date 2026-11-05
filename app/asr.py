@@ -159,6 +159,7 @@ def _run_source_transcribe(model: WhisperModel, wav_path: Path, *, vad: bool, wo
         language="ja",
         vad_filter=vad,
         condition_on_previous_text=False,
+        hotwords=config.SOURCE_HOTWORDS or None,
         word_timestamps=word_ts,
     )
     return list(segments)
